@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>To-Do Dashboard</title>
+  <style>
+    :root {
+      --bg: #f7f6f3;
+      --card-bg: #ffffff;
+      --border: #e3e2de;
+      --text: #37352f;
+      --muted: #9b9a97;
+      --high: #e03e3e;
+      --medium: #d9730d;
+      --low: #0f7b6c;
+      --col-todo: #f1efec;
+      --col-progress: #eef3fb;
+      --col-done: #eefaf4;
+      --radius: 8px;
+      --shadow: 0 1px 3px rgba(0,0,0,.08);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); }
+
+    header {
+      padding: 24px 32px 16px;
+      border-bottom: 1px solid var(--border);
+      background: var(--card-bg);
+      display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+    }
+    header h1 { font-size: 1.4rem; font-weight: 700; }
+    header .subtitle { font-size: .85rem; color: var(--muted); margin-top: 2px; }
+
+    .filters {
+      display: flex; gap: 10px; flex-wrap: wrap; padding: 16px 32px;
+      background: var(--card-bg); border-bottom: 1px solid var(--border);
+    }
+    .filters label { font-size: .8rem; color: var(--muted); font-weight: 500; margin-right: 4px; }
+    .filters select {
+      border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px;
+      font-size: .85rem; background: var(--bg); color: var(--text); cursor: pointer;
+    }
+
+    .board {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; padding: 24px 32px;
+      min-height: calc(100vh - 140px);
+    }
+    @media (max-width: 768px) { .board { grid-template-columns: 1fr; } }
+
+    .column { background: var(--col-todo); border-radius: var(--radius); padding: 16px; }
+    .column.inprogress { background: var(--col-progress); }
+    .column.done { background: var(--col-done); }
+
+    .col-header {
+      font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+      color: var(--muted); margin-bottom: 14px; display: flex; align-items: center; gap: 8px;
+    }
+    .col-header .count {
+      background: rgba(0,0,0,.06); border-radius: 20px; padding: 2px 8px; font-size: .72rem;
+    }
+
+    .card {
+      background: var(--card-bg); border-radius: var(--radius); padding: 12px 14px;
+      margin-bottom: 10px; box-shadow: var(--shadow); border: 1px solid var(--border);
+      transition: box-shadow .15s;
+    }
+    .card:hover { box-shadow: 0 3px 8px rgba(0,0,0,.12); }
+
+    .card-title { font-size: .9rem; font-weight: 500; line-height: 1.4; margin-bottom: 8px; }
+    .card-meta { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+    .badge {
+      font-size: .7rem; font-weight: 600; border-radius: 4px; padding: 2px 7px;
+      text-transform: capitalize;
+    }
+    .priority-high   { background: #fdecea; color: var(--high); }
+    .priority-medium { background: #fdf3e4; color: var(--medium); }
+    .priority-low    { background: #e4f5f0; color: var(--low); }
+    .category-badge  { background: #f0eeff; color: #5c4fcf; }
+    .owner-badge     { background: #f5f5f5; color: var(--muted); }
+
+    .ticket-link { font-size: .72rem; color: #2563eb; text-decoration: none; }
+    .ticket-link:hover { text-decoration: underline; }
+
+    .empty { color: var(--muted); font-size: .85rem; text-align: center; padding: 24px 0; }
+    .loading { text-align: center; padding: 60px; color: var(--muted); }
+    .error-box { background: #fdecea; color: var(--high); padding: 16px; border-radius: var(--radius); margin: 24px 32px; }
+
+    .refresh-btn {
+      background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+      padding: 6px 14px; font-size: .82rem; cursor: pointer; color: var(--text);
+    }
+    .refresh-btn:hover { background: var(--border); }
+  </style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>📋 To-Do Dashboard</h1>
+    <div class="subtitle" id="last-updated">Loading…</div>
+  </div>
+  <button class="refresh-btn" onclick="loadData()">↻ Refresh</button>
+</header>
+
+<div class="filters">
+  <div>
+    <label>Category</label>
+    <select id="filter-category" onchange="render()">
+      <option value="">All</option>
+      <option value="work">Work</option>
+      <option value="yango">Yango</option>
+      <option value="gr">GR</option>
+      <option value="finance">Finance</option>
+      <option value="personal">Personal</option>
+    </select>
+  </div>
+  <div>
+    <label>Priority</label>
+    <select id="filter-priority" onchange="render()">
+      <option value="">All</option>
+      <option value="high">High</option>
+      <option value="medium">Medium</option>
+      <option value="low">Low</option>
+    </select>
+  </div>
+</div>
+
+<div id="board-container">
+  <div class="loading">Loading tasks…</div>
+</div>
+
+<script>
+  // ── CONFIG ────────────────────────────────────────────────────────────────
+  // Replace with your Google Sheet ID (from the URL)
+  const SHEET_ID = "YOUR_GOOGLE_SHEET_ID";
+  const SHEET_NAME = "Tasks";
+  // ─────────────────────────────────────────────────────────────────────────
+
+  let allTasks = [];
+
+  const STATUS_MAP = {
+    "todo":        { label: "To Do",       col: "todo" },
+    "in progress": { label: "In Progress", col: "inprogress" },
+    "done":        { label: "Done",        col: "done" },
+  };
+
+  function colKey(status) {
+    const s = (status || "").toLowerCase().trim();
+    return STATUS_MAP[s]?.col ?? "todo";
+  }
+
+  async function loadData() {
+    document.getElementById("board-container").innerHTML = '<div class="loading">Loading tasks…</div>';
+    const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(SHEET_NAME)}`;
+    try {
+      const res = await fetch(url);
+      const text = await res.text();
+      // Strip google's JS wrapper
+      const json = JSON.parse(text.replace(/^[^(]+\(/, "").replace(/\);?\s*$/, ""));
+      const cols = json.table.cols.map(c => c.label);
+      allTasks = json.table.rows.map(row => {
+        const obj = {};
+        cols.forEach((col, i) => { obj[col] = row.c[i]?.v ?? ""; });
+        return obj;
+      });
+      document.getElementById("last-updated").textContent = "Last updated: " + new Date().toLocaleTimeString();
+      render();
+    } catch (e) {
+      document.getElementById("board-container").innerHTML =
+        `<div class="error-box">⚠️ Could not load data. Make sure SHEET_ID is set and the sheet is shared publicly (View access).<br><br>${e.message}</div>`;
+    }
+  }
+
+  function render() {
+    const catFilter  = document.getElementById("filter-category").value.toLowerCase();
+    const priFilter  = document.getElementById("filter-priority").value.toLowerCase();
+
+    const filtered = allTasks.filter(t => {
+      if (catFilter && (t.Category || "").toLowerCase() !== catFilter) return false;
+      if (priFilter && (t.Priority || "").toLowerCase() !== priFilter) return false;
+      return true;
+    });
+
+    const columns = {
+      todo:       { label: "To Do",       tasks: [], icon: "○" },
+      inprogress: { label: "In Progress", tasks: [], icon: "◑" },
+      done:       { label: "Done",        tasks: [], icon: "●" },
+    };
+
+    filtered.forEach(t => {
+      const col = colKey(t.Status);
+      columns[col].tasks.push(t);
+    });
+
+    const html = `<div class="board">` +
+      Object.entries(columns).map(([key, col]) => `
+        <div class="column ${key}">
+          <div class="col-header">
+            ${col.icon} ${col.label}
+            <span class="count">${col.tasks.length}</span>
+          </div>
+          ${col.tasks.length === 0
+            ? `<div class="empty">No tasks here</div>`
+            : col.tasks.map(t => cardHTML(t)).join("")
+          }
+        </div>
+      `).join("") +
+    `</div>`;
+
+    document.getElementById("board-container").innerHTML = html;
+  }
+
+  function cardHTML(t) {
+    const ticket = t.Ticket ? t.Ticket.toString().trim() : "";
+    const ticketHTML = ticket
+      ? `<a class="ticket-link" href="https://st.yandex-team.ru/${ticket}" target="_blank">🔗 ${ticket}</a>`
+      : "";
+    const pri = (t.Priority || "medium").toLowerCase();
+    const cat = (t.Category || "").toLowerCase();
+    return `
+      <div class="card">
+        <div class="card-title">${escHtml(t.Task || "")}</div>
+        <div class="card-meta">
+          <span class="badge priority-${pri}">${pri}</span>
+          ${cat ? `<span class="badge category-badge">${escHtml(cat)}</span>` : ""}
+          ${t.Owner ? `<span class="badge owner-badge">${escHtml(String(t.Owner))}</span>` : ""}
+          ${ticketHTML}
+        </div>
+      </div>`;
+  }
+
+  function escHtml(s) {
+    return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  }
+
+  loadData();
+</script>
+</body>
+</html>
