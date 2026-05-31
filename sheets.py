@@ -8,7 +8,7 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive.file",
 ]
 
-HEADERS = ["ID", "Task", "Category", "Priority", "Owner", "Source", "Ticket", "Status", "Created At"]
+HEADERS = ["ID", "Task", "Category", "Priority", "Owner", "Source", "Ticket", "Deadline", "Status", "Created At"]
 
 _client = None
 _sheet = None
@@ -60,11 +60,11 @@ def _next_id(sheet) -> int:
     return max(ids, default=0) + 1
 
 
-def add_task(task: str, category: str, priority: str, owner: str, source: str = "manual", ticket: str = None) -> int:
+def add_task(task: str, category: str, priority: str, owner: str, source: str = "manual", ticket: str = None, deadline: str = None) -> int:
     sheet = _get_sheet()
     row_id = _next_id(sheet)
     created_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
-    row = [row_id, task, category, priority, owner, source, ticket or "", "todo", created_at]
+    row = [row_id, task, category, priority, owner, source, ticket or "", deadline or "", "todo", created_at]
     sheet.append_row(row)
     return row_id
 
@@ -86,6 +86,7 @@ def list_tasks(status_filter: str = None) -> list[dict]:
             "owner": r.get("Owner"),
             "source": r.get("Source"),
             "ticket": r.get("Ticket"),
+            "deadline": r.get("Deadline"),
             "status": r.get("Status"),
             "created_at": r.get("Created At"),
         })

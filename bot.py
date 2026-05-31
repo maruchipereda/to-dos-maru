@@ -18,7 +18,7 @@ YANDEX_TRACKER_RE = re.compile(r"\b([A-Z][A-Z0-9]+-\d+)\b")
 PRIORITY_EMOJI = {"high": "🔴", "medium": "🟡", "low": "🟢"}
 CATEGORY_EMOJI = {"work": "💼", "yango": "🚕", "gr": "🏛️", "finance": "💰", "personal": "🙋"}
 
-ASK_PRIORITY, ASK_CATEGORY, ASK_CATEGORY_TEXT, ASK_OWNER, ASK_TICKET = range(5)
+ASK_PRIORITY, ASK_CATEGORY, ASK_CATEGORY_TEXT, ASK_OWNER, ASK_TICKET, ASK_DEADLINE = range(6)
 
 
 def extract_ticket(text: str) -> str | None:
@@ -194,16 +194,38 @@ async def skip_owner(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def received_ticket(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
-    ticket = extract_ticket(text) or text
-    context.user_data["ticket"] = ticket
-    await save_task(update, context, from_callback=False)
-    return ConversationHandler.END
+    context.user_data["ticket"] = extract_ticket(text) or text
+    await ask_deadline(update, context, from_callback=False)
+    return ASK_DEADLINE
 
 
 async def skip_ticket(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     context.user_data["ticket"] = None
+    await ask_deadline(update, context, from_callback=True)
+    return ASK_DEADLINE
+
+
+async def ask_deadline(update: Update, context: ContextTypes.DEFAULT_TYPE, from_callback: bool):
+    text = f"{task_summary(context)}\n\n📅 ¿Tiene fecha límite?\n_(escribe la fecha, ej: 15/06 o 15 jun, o salta)_"
+    keyboard = skip_keyboard("skip_deadline")
+    if from_callback:
+        await update.callback_query.edit_message_text(text, parse_mode="Markdown", reply_markup=keyboard)
+    else:
+        await update.message.reply_text(text, parse_mode="Markdown", reply_markup=keyboard)
+
+
+async def received_deadline(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["deadline"] = update.message.text.strip()
+    await save_task(update, context, from_callback=False)
+    return ConversationHandler.END
+
+
+async def skip_deadline(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    context.user_data["deadline"] = None
     await save_task(update, context, from_callback=True)
     return ConversationHandler.END
 
@@ -216,16 +238,18 @@ async def save_task(update: Update, context: ContextTypes.DEFAULT_TYPE, from_cal
     owner = d.get("owner", update.effective_user.first_name)
     ticket = d.get("ticket")
 
-    row_id = sheets.add_task(task, category, priority, owner, source="manual", ticket=ticket)
+    deadline = d.get("deadline")
+    row_id = sheets.add_task(task, category, priority, owner, source="manual", ticket=ticket, deadline=deadline)
 
     pri_icon = PRIORITY_EMOJI.get(priority, "🟡")
     cat_icon = CATEGORY_EMOJI.get(category, "📌")
     ticket_line = f"\n🎫 [{ticket}](https://st.yandex-team.ru/{ticket})" if ticket else ""
+    deadline_line = f"\n📅 {deadline}" if deadline else ""
 
     text = (
         f"✅ ¡Tarea *#{row_id}* guardada!\n\n"
         f"📝 {task}\n"
-        f"{pri_icon} {priority}  {cat_icon} {category}  👤 {owner}{ticket_line}"
+        f"{pri_icon} {priority}  {cat_icon} {category}  👤 {owner}{ticket_line}{deadline_line}"
     )
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("➕ Otra tarea", callback_data="new_task"),
@@ -267,7 +291,8 @@ async def show_tasks(update: Update, context: ContextTypes.DEFAULT_TYPE, from_ca
             ticket_part = f" [{t['ticket']}](https://st.yandex-team.ru/{t['ticket']})" if t.get("ticket") else ""
             pri_icon = PRIORITY_EMOJI.get(t["priority"], "🟡")
             cat_icon = CATEGORY_EMOJI.get(t["category"], "📌")
-            lines.append(f"{pri_icon} *#{t['id']}* {t['task']}{ticket_part}\n   {cat_icon} {t['category']} · 👤 {t['owner']}")
+            deadline_part = f" · 📅 {t['deadline']}" if t.get("deadline") else ""
+            lines.append(f"{pri_icon} *#{t['id']}* {t['task']}{ticket_part}\n   {cat_icon} {t['category']} · 👤 {t['owner']}{deadline_part}")
         text = "\n".join(lines)
         done_buttons = [InlineKeyboardButton(f"✅ #{t['id']}", callback_data=f"done_{t['id']}") for t in tasks]
         rows = [done_buttons[i:i+3] for i in range(0, len(done_buttons), 3)]
@@ -361,6 +386,11 @@ def main():
             ASK_TICKET: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, received_ticket),
                 CallbackQueryHandler(skip_ticket, pattern="^skip_ticket$"),
+                CallbackQueryHandler(cancel_conv, pattern="^cancel$"),
+            ],
+            ASK_DEADLINE: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, received_deadline),
+                CallbackQueryHandler(skip_deadline, pattern="^skip_deadline$"),
                 CallbackQueryHandler(cancel_conv, pattern="^cancel$"),
             ],
         },
