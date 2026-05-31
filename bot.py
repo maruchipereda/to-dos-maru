@@ -59,7 +59,7 @@ async def ai_parse_task(text: str) -> dict:
         return {"task": task, "priority": priority, "category": category}
     except Exception as e:
         logger.error(f"AI parse error: {e}")
-        return {"task": text.strip(), "priority": "medium", "category": "work"}
+        return {"task": text.strip(), "priority": "medium", "category": "work", "ai_failed": True}
 
 
 def main_menu_keyboard():
@@ -206,6 +206,7 @@ async def handle_free_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ticket_link = f"\n🔗 https://st.yandex-team.ru/{ticket}" if ticket else ""
     pri_icon = PRIORITY_EMOJI.get(parsed["priority"], "🟡")
     cat_icon = CATEGORY_EMOJI.get(parsed["category"], "📌")
+    ai_note = "\n_\\(clasificación manual — IA no disponible\\)_" if parsed.get("ai_failed") else ""
 
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("📋 Ver todas las tareas", callback_data="list")],
@@ -215,8 +216,8 @@ async def handle_free_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"🤖 ¡Listo! Guardé la tarea *#{row_id}*\n\n"
         f"📝 {parsed['task']}\n"
-        f"{pri_icon} {parsed['priority']}  {cat_icon} {parsed['category']}{ticket_link}",
-        parse_mode="Markdown",
+        f"{pri_icon} {parsed['priority']}  {cat_icon} {parsed['category']}{ticket_link}{ai_note}",
+        parse_mode="MarkdownV2",
         reply_markup=keyboard
     )
 

@@ -19,14 +19,22 @@ def _get_sheet():
     if _sheet is not None:
         return _sheet
 
+    import json
     creds_json = os.getenv("GOOGLE_CREDENTIALS_JSON")
+    creds_path = os.getenv("GOOGLE_CREDENTIALS_PATH", "credentials.json")
+
     if creds_json:
-        import json
         creds_dict = json.loads(creds_json)
         creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
-    else:
-        creds_path = os.getenv("GOOGLE_CREDENTIALS_PATH", "credentials.json")
+    elif os.path.isfile(creds_path):
         creds = Credentials.from_service_account_file(creds_path, scopes=SCOPES)
+    else:
+        # last resort: treat GOOGLE_CREDENTIALS_PATH value as raw JSON
+        try:
+            creds_dict = json.loads(creds_path)
+            creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+        except Exception:
+            raise RuntimeError("No valid Google credentials found. Set GOOGLE_CREDENTIALS_JSON.")
     _client = gspread.authorize(creds)
 
     spreadsheet_id = os.getenv("GOOGLE_SHEET_ID")
