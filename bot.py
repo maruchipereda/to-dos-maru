@@ -50,7 +50,7 @@ def category_keyboard():
         [InlineKeyboardButton("🏛️ GR", callback_data="cat_gr"),
          InlineKeyboardButton("💰 Finance", callback_data="cat_finance")],
         [InlineKeyboardButton("🙋 Personal", callback_data="cat_personal")],
-        [InlineKeyboardButton("✏️ Otra (escribila)", callback_data="cat_other"),
+        [InlineKeyboardButton("✏️ Otra (escríbela)", callback_data="cat_other"),
          InlineKeyboardButton("❌ Cancelar", callback_data="cancel")],
     ])
 
@@ -66,13 +66,13 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     name = update.effective_user.first_name
     await update.message.reply_text(
         f"¡Hola {name}! 👋 Soy tu asistente de tareas.\n\n"
-        "Usá los botones para navegar 👇",
+        "Usa los botones para navegar 👇",
         reply_markup=main_menu_keyboard()
     )
 
 
 async def cmd_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("¿Qué querés hacer? 👇", reply_markup=main_menu_keyboard())
+    await update.message.reply_text("¿Qué quieres hacer? 👇", reply_markup=main_menu_keyboard())
 
 
 def task_summary(ctx) -> str:
@@ -93,7 +93,7 @@ def task_summary(ctx) -> str:
 async def start_new_task_from_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    await query.edit_message_text("📝 Contame qué tenés que hacer:")
+    await query.edit_message_text("📝 Cuéntame qué tienes que hacer:")
     return ASK_PRIORITY
 
 
@@ -141,7 +141,7 @@ async def received_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if query.data == "cat_other":
         await query.edit_message_text(
-            f"{task_summary(context)}\n\n✏️ Escribí la categoría:",
+            f"{task_summary(context)}\n\n✏️ Escribe la categoría:",
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancelar", callback_data="cancel")]])
         )
@@ -149,7 +149,7 @@ async def received_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     context.user_data["category"] = query.data.replace("cat_", "")
     await query.edit_message_text(
-        f"{task_summary(context)}\n\n👤 ¿Quién es el responsable?\n_(escribí el nombre o saltá)_",
+        f"{task_summary(context)}\n\n👤 ¿Quién es el responsable?\n_(escribe el nombre o salta)_",
         parse_mode="Markdown",
         reply_markup=skip_keyboard("skip_owner")
     )
@@ -159,7 +159,7 @@ async def received_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def received_category_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["category"] = update.message.text.strip().lower()
     await update.message.reply_text(
-        f"{task_summary(context)}\n\n👤 ¿Quién es el responsable?\n_(escribí el nombre o saltá)_",
+        f"{task_summary(context)}\n\n👤 ¿Quién es el responsable?\n_(escribe el nombre o salta)_",
         parse_mode="Markdown",
         reply_markup=skip_keyboard("skip_owner")
     )
@@ -171,7 +171,7 @@ async def received_category_text(update: Update, context: ContextTypes.DEFAULT_T
 async def received_owner(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["owner"] = update.message.text.strip()
     await update.message.reply_text(
-        f"{task_summary(context)}\n\n🎫 ¿Tiene ticket de Yandex Tracker?\n_(ej: FLEETSUPPORT-2323, o saltá)_",
+        f"{task_summary(context)}\n\n🎫 ¿Tiene ticket de Yandex Tracker?\n_(ej: FLEETSUPPORT-2323, o salta)_",
         parse_mode="Markdown",
         reply_markup=skip_keyboard("skip_ticket")
     )
@@ -183,7 +183,7 @@ async def skip_owner(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     context.user_data["owner"] = update.effective_user.first_name
     await query.edit_message_text(
-        f"{task_summary(context)}\n\n🎫 ¿Tiene ticket de Yandex Tracker?\n_(ej: FLEETSUPPORT-2323, o saltá)_",
+        f"{task_summary(context)}\n\n🎫 ¿Tiene ticket de Yandex Tracker?\n_(ej: FLEETSUPPORT-2323, o salta)_",
         parse_mode="Markdown",
         reply_markup=skip_keyboard("skip_ticket")
     )
@@ -250,7 +250,7 @@ async def cancel_conv(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     context.user_data.clear()
-    await query.edit_message_text("Cancelado. ¿Qué querés hacer?", reply_markup=main_menu_keyboard())
+    await query.edit_message_text("Cancelado. ¿Qué quieres hacer?", reply_markup=main_menu_keyboard())
     return ConversationHandler.END
 
 
@@ -295,7 +295,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await show_tasks(update, context, from_callback=True)
 
     elif data == "menu":
-        await query.edit_message_text("¿Qué querés hacer? 👇", reply_markup=main_menu_keyboard())
+        await query.edit_message_text("¿Qué quieres hacer? 👇", reply_markup=main_menu_keyboard())
 
     elif data == "done_prompt":
         tasks = sheets.list_tasks()
@@ -305,7 +305,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Menú", callback_data="menu")]])
             )
             return
-        lines = ["¿Cuál completaste? 👇\n"]
+        lines = ["¿Cuál tarea completaste? 👇\n"]
         for t in tasks:
             lines.append(f"{PRIORITY_EMOJI.get(t['priority'], '🟡')} *#{t['id']}* {t['task']}")
         done_buttons = [InlineKeyboardButton(f"✅ #{t['id']}", callback_data=f"done_{t['id']}") for t in tasks]
