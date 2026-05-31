@@ -30,7 +30,6 @@ def main_menu_keyboard():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("➕ Nueva tarea", callback_data="new_task"),
          InlineKeyboardButton("📋 Ver tareas", callback_data="list")],
-        [InlineKeyboardButton("✅ Completar tarea", callback_data="done_prompt")],
     ])
 
 
@@ -288,16 +287,11 @@ async def show_tasks(update: Update, context: ContextTypes.DEFAULT_TYPE, from_ca
     else:
         lines = [f"📋 *Tareas pendientes* ({len(tasks)})\n"]
         for t in tasks:
-            ticket_part = f" [{t['ticket']}](https://st.yandex-team.ru/{t['ticket']})" if t.get("ticket") else ""
             pri_icon = PRIORITY_EMOJI.get(t["priority"], "🟡")
-            cat_icon = CATEGORY_EMOJI.get(t["category"], "📌")
-            deadline_part = f" · 📅 {t['deadline']}" if t.get("deadline") else ""
-            lines.append(f"{pri_icon} *#{t['id']}* {t['task']}{ticket_part}\n   {cat_icon} {t['category']} · 👤 {t['owner']}{deadline_part}")
+            deadline_part = f"  📅 {t['deadline']}" if t.get("deadline") else ""
+            lines.append(f"{pri_icon} {t['task']}{deadline_part}")
         text = "\n".join(lines)
-        done_buttons = [InlineKeyboardButton(f"✅ #{t['id']}", callback_data=f"done_{t['id']}") for t in tasks]
-        rows = [done_buttons[i:i+3] for i in range(0, len(done_buttons), 3)]
-        rows.append([InlineKeyboardButton("🏠 Menú", callback_data="menu")])
-        keyboard = InlineKeyboardMarkup(rows)
+        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Menú", callback_data="menu")]])
 
     if from_callback:
         await update.callback_query.edit_message_text(text, parse_mode="Markdown",
@@ -323,21 +317,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("¿Qué quieres hacer? 👇", reply_markup=main_menu_keyboard())
 
     elif data == "done_prompt":
-        tasks = sheets.list_tasks()
-        if not tasks:
-            await query.edit_message_text(
-                "🎉 ¡No hay tareas pendientes!",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Menú", callback_data="menu")]])
-            )
-            return
-        lines = ["¿Cuál tarea completaste? 👇\n"]
-        for t in tasks:
-            lines.append(f"{PRIORITY_EMOJI.get(t['priority'], '🟡')} *#{t['id']}* {t['task']}")
-        done_buttons = [InlineKeyboardButton(f"✅ #{t['id']}", callback_data=f"done_{t['id']}") for t in tasks]
-        rows = [done_buttons[i:i+3] for i in range(0, len(done_buttons), 3)]
-        rows.append([InlineKeyboardButton("🏠 Menú", callback_data="menu")])
-        await query.edit_message_text("\n".join(lines), parse_mode="Markdown",
-                                      reply_markup=InlineKeyboardMarkup(rows))
+        await query.edit_message_text(
+            "✅ Para marcar tareas como completadas, hazlo directo desde el dashboard 👇\n\n"
+            "🌐 https://maruchipereda.github.io/to-dos-maru/dashboard.html",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Menú", callback_data="menu")]])
+        )
 
     elif data.startswith("done_"):
         task_id = int(data.split("_")[1])
