@@ -54,12 +54,21 @@ async def ai_parse_task(text: str) -> dict:
         return {"task": text.strip(), "priority": "medium", "category": "work"}
 
 
+PRIORITY_EMOJI = {"high": "🔴", "medium": "🟡", "low": "🟢"}
+CATEGORY_EMOJI = {"work": "💼", "yango": "🚕", "gr": "🏛️", "finance": "💰", "personal": "🙋"}
+
+
 async def cmd_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Usage: /add task|priority|category|owner"""
     args = " ".join(context.args)
     parts = [p.strip() for p in args.split("|")]
     if len(parts) < 1 or not parts[0]:
-        await update.message.reply_text("Usage: /add task|priority|category|owner\nExample: /add Buy groceries|low|personal|@me")
+        await update.message.reply_text(
+            "Casi! El formato es así:\n"
+            "`/add tarea|prioridad|categoría|responsable`\n\n"
+            "Por ejemplo:\n"
+            "`/add Comprar café|low|personal|Maru`",
+            parse_mode="Markdown"
+        )
         return
 
     task = parts[0]
@@ -74,62 +83,70 @@ async def cmd_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     ticket = extract_ticket(task)
     row_id = sheets.add_task(task, category, priority, owner, source="manual", ticket=ticket)
-    ticket_link = f"\nTicket: https://st.yandex-team.ru/{ticket}" if ticket else ""
-    await update.message.reply_text(f"✅ Task #{row_id} added: *{task}*\nPriority: {priority} | Category: {category}{ticket_link}", parse_mode="Markdown")
+    ticket_link = f"\n🔗 Ticket: https://st.yandex-team.ru/{ticket}" if ticket else ""
+    pri_icon = PRIORITY_EMOJI.get(priority, "🟡")
+    cat_icon = CATEGORY_EMOJI.get(category, "📌")
+    await update.message.reply_text(
+        f"✅ ¡Listo! Agregué la tarea *#{row_id}*\n\n"
+        f"📝 {task}\n"
+        f"{pri_icon} Prioridad: {priority}  {cat_icon} Categoría: {category}{ticket_link}",
+        parse_mode="Markdown"
+    )
 
 
 async def cmd_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """List all open tasks"""
     tasks = sheets.list_tasks()
     if not tasks:
-        await update.message.reply_text("No open tasks. 🎉")
+        await update.message.reply_text("🎉 ¡No hay tareas pendientes! Estás al día.")
         return
 
-    lines = ["*Open Tasks:*\n"]
+    lines = [f"📋 *Tus tareas pendientes* ({len(tasks)} en total)\n"]
     for t in tasks:
         ticket_part = f" [{t['ticket']}](https://st.yandex-team.ru/{t['ticket']})" if t.get("ticket") else ""
+        pri_icon = PRIORITY_EMOJI.get(t['priority'], "🟡")
+        cat_icon = CATEGORY_EMOJI.get(t['category'], "📌")
         lines.append(
-            f"*#{t['id']}* {t['task']}{ticket_part}\n"
-            f"  _{t['priority']} · {t['category']} · {t['owner']}_"
+            f"{pri_icon} *#{t['id']}* {t['task']}{ticket_part}\n"
+            f"   {cat_icon} {t['category']} · 👤 {t['owner']}"
         )
     await update.message.reply_text("\n".join(lines), parse_mode="Markdown", disable_web_page_preview=True)
 
 
 async def cmd_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Mark task as done: /done [id]"""
     if not context.args:
-        await update.message.reply_text("Usage: /done <task_id>")
+        await update.message.reply_text("Dime el número de la tarea 😊 Ej: `/done 3`", parse_mode="Markdown")
         return
     try:
         task_id = int(context.args[0])
     except ValueError:
-        await update.message.reply_text("Please provide a valid task number.")
+        await update.message.reply_text("Hmm, eso no parece un número válido. Prueba con `/done 3` por ejemplo.", parse_mode="Markdown")
         return
 
     success = sheets.mark_done(task_id)
     if success:
-        await update.message.reply_text(f"✅ Task #{task_id} marked as done!")
+        await update.message.reply_text(f"🙌 ¡Excelente! La tarea *#{task_id}* está lista. Una menos en la lista 💪", parse_mode="Markdown")
     else:
-        await update.message.reply_text(f"Task #{task_id} not found.")
+        await update.message.reply_text(f"🤔 No encontré la tarea *#{task_id}*. Usa /list para ver las que tienes.", parse_mode="Markdown")
 
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    name = update.effective_user.first_name
     text = (
-        "*To-Do Bot Commands*\n\n"
-        "/add task|priority|category|owner — Add a task manually\n"
-        "/list — Show all open tasks\n"
-        "/done <id> — Mark task as done\n"
-        "/help — Show this message\n\n"
-        "Or just *send any message* and AI will create the task for you!\n\n"
-        "Priorities: high / medium / low\n"
-        "Categories: work / yango / gr / finance / personal\n\n"
-        "Yandex Tracker codes (e.g. FLEETSUPPORT-2323) are detected automatically."
+        f"¡Hola {name}! 👋 Soy tu asistente de tareas. Aquí te explico cómo usarme:\n\n"
+        "💬 *Escríbeme cualquier cosa* y yo creo la tarea automáticamente. Así de fácil.\n\n"
+        "📌 *Comandos disponibles:*\n"
+        "/add tarea|prioridad|categoría|responsable — Agregar tarea manualmente\n"
+        "/list — Ver todas tus tareas pendientes\n"
+        "/done <número> — Marcar una tarea como completada\n"
+        "/help — Ver este mensaje\n\n"
+        "🎯 *Prioridades:* high 🔴 · medium 🟡 · low 🟢\n"
+        "📂 *Categorías:* work 💼 · yango 🚕 · gr 🏛️ · finance 💰 · personal 🙋\n\n"
+        "💡 Si mencionas un código de Yandex Tracker (ej. FLEETSUPPORT-2323), lo enlazo automáticamente."
     )
     await update.message.reply_text(text, parse_mode="Markdown")
 
 
 async def handle_free_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Free-form text: use AI to extract task details"""
     text = update.message.text.strip()
     if not text:
         return
@@ -142,10 +159,13 @@ async def handle_free_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parsed["task"], parsed["category"], parsed["priority"],
         owner, source="ai", ticket=ticket
     )
-    ticket_link = f"\nTicket: https://st.yandex-team.ru/{ticket}" if ticket else ""
+    ticket_link = f"\n🔗 Ticket: https://st.yandex-team.ru/{ticket}" if ticket else ""
+    pri_icon = PRIORITY_EMOJI.get(parsed["priority"], "🟡")
+    cat_icon = CATEGORY_EMOJI.get(parsed["category"], "📌")
     await update.message.reply_text(
-        f"🤖 Task #{row_id} created: *{parsed['task']}*\n"
-        f"Priority: {parsed['priority']} | Category: {parsed['category']}{ticket_link}",
+        f"🤖 ¡Entendido! Creé la tarea *#{row_id}*\n\n"
+        f"📝 {parsed['task']}\n"
+        f"{pri_icon} Prioridad: {parsed['priority']}  {cat_icon} Categoría: {parsed['category']}{ticket_link}",
         parse_mode="Markdown"
     )
 
