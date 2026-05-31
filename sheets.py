@@ -19,8 +19,14 @@ def _get_sheet():
     if _sheet is not None:
         return _sheet
 
-    creds_path = os.getenv("GOOGLE_CREDENTIALS_PATH", "credentials.json")
-    creds = Credentials.from_service_account_file(creds_path, scopes=SCOPES)
+    creds_json = os.getenv("GOOGLE_CREDENTIALS_JSON")
+    if creds_json:
+        import json
+        creds_dict = json.loads(creds_json)
+        creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+    else:
+        creds_path = os.getenv("GOOGLE_CREDENTIALS_PATH", "credentials.json")
+        creds = Credentials.from_service_account_file(creds_path, scopes=SCOPES)
     _client = gspread.authorize(creds)
 
     spreadsheet_id = os.getenv("GOOGLE_SHEET_ID")
