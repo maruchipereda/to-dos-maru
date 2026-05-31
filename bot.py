@@ -16,7 +16,10 @@ logger = logging.getLogger(__name__)
 
 YANDEX_TRACKER_RE = re.compile(r"\b([A-Z][A-Z0-9]+-\d+)\b")
 PRIORITY_EMOJI = {"high": "🔴", "medium": "🟡", "low": "🟢"}
-CATEGORY_EMOJI = {"work": "💼", "yango": "🚕", "gr": "🏛️", "finance": "💰", "personal": "🙋"}
+CATEGORY_EMOJI = {
+    "supply": "📦", "marketing": "📣", "legal": "⚖️", "gr": "🏛️",
+    "hr": "👥", "pr": "📰", "partner ops": "🤝", "product": "🛠️", "personal": "🙋"
+}
 
 ASK_PRIORITY, ASK_CATEGORY, ASK_CATEGORY_TEXT, ASK_OWNER, ASK_TICKET, ASK_DEADLINE = range(6)
 
@@ -44,10 +47,14 @@ def priority_keyboard():
 
 def category_keyboard():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("💼 Work", callback_data="cat_work"),
-         InlineKeyboardButton("🚕 Yango", callback_data="cat_yango")],
-        [InlineKeyboardButton("🏛️ GR", callback_data="cat_gr"),
-         InlineKeyboardButton("💰 Finance", callback_data="cat_finance")],
+        [InlineKeyboardButton("📦 Supply", callback_data="cat_supply"),
+         InlineKeyboardButton("📣 Marketing", callback_data="cat_marketing")],
+        [InlineKeyboardButton("⚖️ Legal", callback_data="cat_legal"),
+         InlineKeyboardButton("🏛️ GR", callback_data="cat_gr")],
+        [InlineKeyboardButton("👥 HR", callback_data="cat_hr"),
+         InlineKeyboardButton("📰 PR", callback_data="cat_pr")],
+        [InlineKeyboardButton("🤝 Partner Ops", callback_data="cat_partner ops"),
+         InlineKeyboardButton("🛠️ Product", callback_data="cat_product")],
         [InlineKeyboardButton("🙋 Personal", callback_data="cat_personal")],
         [InlineKeyboardButton("✏️ Otra (escríbela)", callback_data="cat_other"),
          InlineKeyboardButton("❌ Cancelar", callback_data="cancel")],
