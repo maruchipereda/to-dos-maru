@@ -1,9 +1,11 @@
 import os
 import re
 import logging
-from datetime import datetime
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import (
+    Application, CommandHandler, MessageHandler, CallbackQueryHandler,
+    ConversationHandler, filters, ContextTypes
+)
 from dotenv import load_dotenv
 import openai
 import sheets
@@ -17,7 +19,13 @@ YANDEX_TRACKER_RE = re.compile(r"\b([A-Z][A-Z0-9]+-\d+)\b")
 VALID_PRIORITIES = {"high", "medium", "low"}
 VALID_CATEGORIES = {"work", "yango", "gr", "finance", "personal"}
 
+PRIORITY_EMOJI = {"high": "🔴", "medium": "🟡", "low": "🟢"}
+CATEGORY_EMOJI = {"work": "💼", "yango": "🚕", "gr": "🏛️", "finance": "💰", "personal": "🙋"}
+
 openai.api_key = os.getenv("OPENAI_API_KEY")
+
+# ConversationHandler states
+WAITING_DONE_ID = 1
 
 
 def extract_ticket(text: str) -> str | None:
@@ -54,96 +62,132 @@ async def ai_parse_task(text: str) -> dict:
         return {"task": text.strip(), "priority": "medium", "category": "work"}
 
 
-PRIORITY_EMOJI = {"high": "🔴", "medium": "🟡", "low": "🟢"}
-CATEGORY_EMOJI = {"work": "💼", "yango": "🚕", "gr": "🏛️", "finance": "💰", "personal": "🙋"}
+def main_menu_keyboard():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("📋 Ver tareas", callback_data="list"),
+         InlineKeyboardButton("✅ Completar tarea", callback_data="done_prompt")],
+        [InlineKeyboardButton("❓ Ayuda", callback_data="help")],
+    ])
 
 
-async def cmd_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    args = " ".join(context.args)
-    parts = [p.strip() for p in args.split("|")]
-    if len(parts) < 1 or not parts[0]:
-        await update.message.reply_text(
-            "Casi! El formato es así:\n"
-            "`/add tarea|prioridad|categoría|responsable`\n\n"
-            "Por ejemplo:\n"
-            "`/add Comprar café|low|personal|Maru`",
-            parse_mode="Markdown"
-        )
-        return
-
-    task = parts[0]
-    priority = parts[1].lower() if len(parts) > 1 and parts[1] else "medium"
-    category = parts[2].lower() if len(parts) > 2 and parts[2] else "work"
-    owner = parts[3] if len(parts) > 3 and parts[3] else update.effective_user.first_name
-
-    if priority not in VALID_PRIORITIES:
-        priority = "medium"
-    if category not in VALID_CATEGORIES:
-        category = "work"
-
-    ticket = extract_ticket(task)
-    row_id = sheets.add_task(task, category, priority, owner, source="manual", ticket=ticket)
-    ticket_link = f"\n🔗 Ticket: https://st.yandex-team.ru/{ticket}" if ticket else ""
-    pri_icon = PRIORITY_EMOJI.get(priority, "🟡")
-    cat_icon = CATEGORY_EMOJI.get(category, "📌")
+async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    name = update.effective_user.first_name
     await update.message.reply_text(
-        f"✅ ¡Listo! Agregué la tarea *#{row_id}*\n\n"
-        f"📝 {task}\n"
-        f"{pri_icon} Prioridad: {priority}  {cat_icon} Categoría: {category}{ticket_link}",
-        parse_mode="Markdown"
+        f"¡Hola {name}! 👋 Soy tu asistente de tareas.\n\n"
+        "💬 *Escríbeme cualquier cosa* y creo la tarea automáticamente.\n"
+        "O usá los botones de abajo para ver y gestionar tus tareas 👇",
+        parse_mode="Markdown",
+        reply_markup=main_menu_keyboard()
     )
+
+
+async def cmd_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "¿Qué querés hacer? 👇",
+        reply_markup=main_menu_keyboard()
+    )
+
+
+async def show_tasks(update: Update, context: ContextTypes.DEFAULT_TYPE, from_callback=False):
+    tasks = sheets.list_tasks()
+
+    if not tasks:
+        text = "🎉 ¡No hay tareas pendientes! Estás al día."
+        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Menú", callback_data="menu")]])
+    else:
+        lines = [f"📋 *Tus tareas pendientes* ({len(tasks)} en total)\n"]
+        for t in tasks:
+            ticket_part = f" [{t['ticket']}](https://st.yandex-team.ru/{t['ticket']})" if t.get("ticket") else ""
+            pri_icon = PRIORITY_EMOJI.get(t["priority"], "🟡")
+            cat_icon = CATEGORY_EMOJI.get(t["category"], "📌")
+            lines.append(
+                f"{pri_icon} *#{t['id']}* {t['task']}{ticket_part}\n"
+                f"   {cat_icon} {t['category']} · 👤 {t['owner']}"
+            )
+        text = "\n".join(lines)
+
+        # Build done buttons for each task
+        done_buttons = [
+            InlineKeyboardButton(f"✅ #{t['id']}", callback_data=f"done_{t['id']}")
+            for t in tasks
+        ]
+        rows = [done_buttons[i:i+3] for i in range(0, len(done_buttons), 3)]
+        rows.append([InlineKeyboardButton("🏠 Menú", callback_data="menu")])
+        keyboard = InlineKeyboardMarkup(rows)
+
+    if from_callback:
+        await update.callback_query.edit_message_text(text, parse_mode="Markdown",
+                                                       disable_web_page_preview=True,
+                                                       reply_markup=keyboard)
+    else:
+        await update.message.reply_text(text, parse_mode="Markdown",
+                                        disable_web_page_preview=True,
+                                        reply_markup=keyboard)
 
 
 async def cmd_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    tasks = sheets.list_tasks()
-    if not tasks:
-        await update.message.reply_text("🎉 ¡No hay tareas pendientes! Estás al día.")
-        return
+    await show_tasks(update, context, from_callback=False)
 
-    lines = [f"📋 *Tus tareas pendientes* ({len(tasks)} en total)\n"]
-    for t in tasks:
-        ticket_part = f" [{t['ticket']}](https://st.yandex-team.ru/{t['ticket']})" if t.get("ticket") else ""
-        pri_icon = PRIORITY_EMOJI.get(t['priority'], "🟡")
-        cat_icon = CATEGORY_EMOJI.get(t['category'], "📌")
-        lines.append(
-            f"{pri_icon} *#{t['id']}* {t['task']}{ticket_part}\n"
-            f"   {cat_icon} {t['category']} · 👤 {t['owner']}"
+
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+
+    if data == "list":
+        await show_tasks(update, context, from_callback=True)
+
+    elif data == "menu":
+        await query.edit_message_text("¿Qué querés hacer? 👇", reply_markup=main_menu_keyboard())
+
+    elif data == "help":
+        text = (
+            "💡 *Cómo usarme:*\n\n"
+            "💬 *Texto libre* — escribime lo que tenés que hacer y yo lo agrego automáticamente.\n\n"
+            "📋 *Ver tareas* — te muestro todo lo pendiente con botones para completar cada una.\n\n"
+            "✅ *Completar* — marcá una tarea como lista directo desde la lista.\n\n"
+            "🎯 *Prioridades:* high 🔴 · medium 🟡 · low 🟢\n"
+            "📂 *Categorías:* work 💼 · yango 🚕 · gr 🏛️ · finance 💰 · personal 🙋\n\n"
+            "💡 Los códigos de Yandex Tracker (ej. FLEETSUPPORT-2323) se detectan solos."
         )
-    await update.message.reply_text("\n".join(lines), parse_mode="Markdown", disable_web_page_preview=True)
+        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Menú", callback_data="menu")]])
+        await query.edit_message_text(text, parse_mode="Markdown", reply_markup=keyboard)
 
+    elif data == "done_prompt":
+        tasks = sheets.list_tasks()
+        if not tasks:
+            await query.edit_message_text(
+                "🎉 ¡No hay tareas pendientes!",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Menú", callback_data="menu")]])
+            )
+            return
+        lines = ["¿Cuál querés completar? Tocá el botón 👇\n"]
+        for t in tasks:
+            pri_icon = PRIORITY_EMOJI.get(t["priority"], "🟡")
+            lines.append(f"{pri_icon} *#{t['id']}* {t['task']}")
+        done_buttons = [
+            InlineKeyboardButton(f"✅ #{t['id']}", callback_data=f"done_{t['id']}")
+            for t in tasks
+        ]
+        rows = [done_buttons[i:i+3] for i in range(0, len(done_buttons), 3)]
+        rows.append([InlineKeyboardButton("🏠 Menú", callback_data="menu")])
+        await query.edit_message_text("\n".join(lines), parse_mode="Markdown",
+                                      reply_markup=InlineKeyboardMarkup(rows))
 
-async def cmd_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args:
-        await update.message.reply_text("Dime el número de la tarea 😊 Ej: `/done 3`", parse_mode="Markdown")
-        return
-    try:
-        task_id = int(context.args[0])
-    except ValueError:
-        await update.message.reply_text("Hmm, eso no parece un número válido. Prueba con `/done 3` por ejemplo.", parse_mode="Markdown")
-        return
-
-    success = sheets.mark_done(task_id)
-    if success:
-        await update.message.reply_text(f"🙌 ¡Excelente! La tarea *#{task_id}* está lista. Una menos en la lista 💪", parse_mode="Markdown")
-    else:
-        await update.message.reply_text(f"🤔 No encontré la tarea *#{task_id}*. Usa /list para ver las que tienes.", parse_mode="Markdown")
-
-
-async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    name = update.effective_user.first_name
-    text = (
-        f"¡Hola {name}! 👋 Soy tu asistente de tareas. Aquí te explico cómo usarme:\n\n"
-        "💬 *Escríbeme cualquier cosa* y yo creo la tarea automáticamente. Así de fácil.\n\n"
-        "📌 *Comandos disponibles:*\n"
-        "/add tarea|prioridad|categoría|responsable — Agregar tarea manualmente\n"
-        "/list — Ver todas tus tareas pendientes\n"
-        "/done <número> — Marcar una tarea como completada\n"
-        "/help — Ver este mensaje\n\n"
-        "🎯 *Prioridades:* high 🔴 · medium 🟡 · low 🟢\n"
-        "📂 *Categorías:* work 💼 · yango 🚕 · gr 🏛️ · finance 💰 · personal 🙋\n\n"
-        "💡 Si mencionas un código de Yandex Tracker (ej. FLEETSUPPORT-2323), lo enlazo automáticamente."
-    )
-    await update.message.reply_text(text, parse_mode="Markdown")
+    elif data.startswith("done_"):
+        task_id = int(data.split("_")[1])
+        success = sheets.mark_done(task_id)
+        if success:
+            await query.edit_message_text(
+                f"🙌 ¡Genial! La tarea *#{task_id}* está completada. Una menos 💪\n\n¿Qué más querés hacer?",
+                parse_mode="Markdown",
+                reply_markup=main_menu_keyboard()
+            )
+        else:
+            await query.edit_message_text(
+                f"🤔 No encontré la tarea #{task_id}.",
+                reply_markup=main_menu_keyboard()
+            )
 
 
 async def handle_free_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -159,14 +203,21 @@ async def handle_free_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parsed["task"], parsed["category"], parsed["priority"],
         owner, source="ai", ticket=ticket
     )
-    ticket_link = f"\n🔗 Ticket: https://st.yandex-team.ru/{ticket}" if ticket else ""
+    ticket_link = f"\n🔗 https://st.yandex-team.ru/{ticket}" if ticket else ""
     pri_icon = PRIORITY_EMOJI.get(parsed["priority"], "🟡")
     cat_icon = CATEGORY_EMOJI.get(parsed["category"], "📌")
+
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("📋 Ver todas las tareas", callback_data="list")],
+        [InlineKeyboardButton("🏠 Menú", callback_data="menu")],
+    ])
+
     await update.message.reply_text(
-        f"🤖 ¡Entendido! Creé la tarea *#{row_id}*\n\n"
+        f"🤖 ¡Listo! Guardé la tarea *#{row_id}*\n\n"
         f"📝 {parsed['task']}\n"
-        f"{pri_icon} Prioridad: {parsed['priority']}  {cat_icon} Categoría: {parsed['category']}{ticket_link}",
-        parse_mode="Markdown"
+        f"{pri_icon} {parsed['priority']}  {cat_icon} {parsed['category']}{ticket_link}",
+        parse_mode="Markdown",
+        reply_markup=keyboard
     )
 
 
@@ -176,11 +227,11 @@ def main():
         raise ValueError("TELEGRAM_BOT_TOKEN not set")
 
     app = Application.builder().token(token).build()
-    app.add_handler(CommandHandler("add", cmd_add))
+    app.add_handler(CommandHandler("start", cmd_start))
+    app.add_handler(CommandHandler("menu", cmd_menu))
     app.add_handler(CommandHandler("list", cmd_list))
-    app.add_handler(CommandHandler("done", cmd_done))
-    app.add_handler(CommandHandler("help", cmd_help))
-    app.add_handler(CommandHandler("start", cmd_help))
+    app.add_handler(CommandHandler("help", cmd_menu))
+    app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_free_text))
 
     logger.info("Bot started")
